@@ -4,6 +4,8 @@ import logging
 import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.entities.errors.project import (
     ProjectNotFoundError as EntityProjectNotFoundError,
@@ -39,6 +41,71 @@ def log_unexpected_error(error: Exception, request: Request = None) -> None:
 
 def setup_error_handlers(app: FastAPI) -> None:
     """Set up global exception handlers for common errors."""
+    
+    # Add global HTTP exception handler
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+        """Handle HTTP exceptions."""
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+        )
+
+    # Add validation error handler
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError):
+        """Handle validation errors."""
+        errors = exc.errors()
+        error_messages = []
+        
+        for error in errors:
+            # Improve error messages for enum validation errors
+            if error["type"] == "enum":
+                # Extract field name from location
+                field_name = error["loc"][-1] if error["loc"] else "field"
+                
+                # Get allowed values from the error message
+                allowed_values = None
+                if "Input should be" in error["msg"]:
+                    allowed_values = error["msg"].split("Input should be")[1].strip()
+                
+                if allowed_values:
+                    custom_msg = f"Invalid value for {field_name}. Allowed values are: {allowed_values}"
+                else:
+                    custom_msg = f"Invalid value for {field_name}. Please check the documentation for allowed values."
+                    
+                error_messages.append({
+                    "loc": error["loc"],
+                    "msg": custom_msg,
+                    "type": "invalid_enum_value",
+                })
+            else:
+                error_messages.append({
+                    "loc": error["loc"],
+                    "msg": error["msg"],
+                    "type": error["type"],
+                })
+        
+        return JSONResponse(
+            status_code=422,
+            content={"detail": "Validation error", "errors": error_messages},
+        )
+
+    # Add general exception handler
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        """Handle general exceptions that weren't caught by specific handlers."""
+        # Don't catch asyncio CancelledError to allow proper shutdown
+        if isinstance(exc, asyncio.CancelledError):
+            raise exc
+        
+        # Log the unexpected error
+        log_unexpected_error(exc, request)
+        
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error."},
+        )
     
     # Entity errors
     @app.exception_handler(EntityProjectNotFoundError)

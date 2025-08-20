@@ -16,7 +16,7 @@ from app.infrastructures.sqlite_db.database import init_db
 from app.routers.v1.errors import setup_error_handlers, log_unexpected_error
 from app.routers.v1 import router as v1_router
 from app.settings import get_settings
-from app.shared.utils.logging import request_id_middleware
+from app.shared.utils.logging import request_id_middleware, RequestIdFilter
 
 
 def setup_middlewares(app: FastAPI, settings) -> None:
@@ -40,8 +40,12 @@ async def lifespan(app: FastAPI):
     # Set application start time
     app.state.start_time = datetime.now()
 
-    # Initialize database
-    await init_db()
+    # Initialize database with proper error handling
+    try:
+        await init_db()
+    except Exception as e:
+        logging.critical("Database initialization failed: %s", str(e), exc_info=True)
+        raise
 
     yield
 
@@ -50,12 +54,17 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = get_settings()
 
-    # Configure logging
+    # Configure logging with request ID filter
+    request_id_filter = RequestIdFilter()
     logging.basicConfig(
         level=getattr(logging, settings.LOG_LEVEL.upper()),
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        format="%(asctime)s - %(levelname)s - %(name)s - [request_id=%(request_id)s] - %(message)s",
         handlers=[logging.StreamHandler()]
     )
+    
+    # Add the request ID filter to the root logger
+    root_logger = logging.getLogger()
+    root_logger.addFilter(request_id_filter)
 
     app = FastAPI(
         lifespan=lifespan,
@@ -75,71 +84,6 @@ app.include_router(v1_router)
 
 # Setup custom error handlers
 setup_error_handlers(app)
-
-# Add global exception handlers
-@app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    """Handle HTTP exceptions."""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle validation errors."""
-    errors = exc.errors()
-    error_messages = []
-    
-    for error in errors:
-        # Improve error messages for enum validation errors
-        if error["type"] == "enum":
-            # Extract field name from location
-            field_name = error["loc"][-1] if error["loc"] else "field"
-            
-            # Get allowed values from the error message
-            allowed_values = None
-            if "Input should be" in error["msg"]:
-                allowed_values = error["msg"].split("Input should be")[1].strip()
-            
-            if allowed_values:
-                custom_msg = f"Invalid value for {field_name}. Allowed values are: {allowed_values}"
-            else:
-                custom_msg = f"Invalid value for {field_name}. Please check the documentation for allowed values."
-                
-            error_messages.append({
-                "loc": error["loc"],
-                "msg": custom_msg,
-                "type": "invalid_enum_value",
-            })
-        else:
-            error_messages.append({
-                "loc": error["loc"],
-                "msg": error["msg"],
-                "type": error["type"],
-            })
-    
-    return JSONResponse(
-        status_code=422,
-        content={"detail": "Validation error", "errors": error_messages},
-    )
-
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle general exceptions that weren't caught by specific handlers."""
-    # Don't catch asyncio CancelledError to allow proper shutdown
-    if isinstance(exc, asyncio.CancelledError):
-        raise exc
-    
-    # Log the unexpected error
-    log_unexpected_error(exc)
-    
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error."},
-    )
 
 
 
@@ -164,7 +108,7 @@ async def health_check(request: Request) -> dict[str, str]:
     uptime_str = str(timedelta(seconds=int(uptime_seconds)))
     return {
         "status": "healthy",
-        "version": request.app.version,
+        "version": getattr(request.app, "version", "unknown"),
         "start_time": request.app.state.start_time.isoformat(),
         "uptime": uptime_str,
     }
