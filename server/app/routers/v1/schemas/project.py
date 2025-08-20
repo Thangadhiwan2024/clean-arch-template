@@ -1,8 +1,9 @@
 """API schemas for project endpoints."""
 
-from typing import Optional, List
+from typing import Optional, List, Any
+from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, ValidationInfo
 
 from app.entities.models.project import ProjectState
 from app.routers.v1.schemas.base import BaseSchema
@@ -14,6 +15,23 @@ class ProjectBase(BaseModel):
     name: str = Field(..., example="New Website Development")
     description: Optional[str] = Field(None, example="Website development for client XYZ")
     state: ProjectState = Field(default=ProjectState.PLANNED, example=ProjectState.PLANNED)
+
+    @field_validator('state')
+    @classmethod
+    def validate_state(cls, v: Any, info: ValidationInfo) -> Any:
+        """Validate the state field with a custom error message."""
+        if v is None:
+            return v
+            
+        if not isinstance(v, ProjectState):
+            try:
+                # Try to convert string to enum
+                return ProjectState(v)
+            except ValueError:
+                allowed_values = ", ".join([f"'{e.value}'" for e in ProjectState])
+                raise ValueError(f"Invalid project state. Allowed values are: {allowed_values}")
+        
+        return v
 
 
 class ProjectCreateRequest(ProjectBase):
@@ -28,6 +46,23 @@ class ProjectUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, example="Updated Website Development")
     description: Optional[str] = Field(None, example="Updated description")
     state: Optional[ProjectState] = Field(None, example=ProjectState.IN_PROGRESS)
+    
+    @field_validator('state')
+    @classmethod
+    def validate_state(cls, v: Any, info: ValidationInfo) -> Any:
+        """Validate the state field with a custom error message."""
+        if v is None:
+            return v
+            
+        if not isinstance(v, ProjectState):
+            try:
+                # Try to convert string to enum
+                return ProjectState(v)
+            except ValueError:
+                allowed_values = ", ".join([f"'{e.value}'" for e in ProjectState])
+                raise ValueError(f"Invalid project state. Allowed values are: {allowed_values}")
+        
+        return v
 
 
 class ProjectResponse(ProjectBase):
@@ -47,6 +82,23 @@ class ProjectListRequest(BaseModel):
     skip: int = Field(0, ge=0, example=0)
     limit: int = Field(100, ge=1, le=1000, example=100)
     state: Optional[ProjectState] = Field(None, example=ProjectState.IN_PROGRESS)
+    
+    @field_validator('state')
+    @classmethod
+    def validate_state(cls, v: Any, info: ValidationInfo) -> Any:
+        """Validate the state field with a custom error message."""
+        if v is None:
+            return v
+            
+        if not isinstance(v, ProjectState):
+            try:
+                # Try to convert string to enum
+                return ProjectState(v)
+            except ValueError:
+                allowed_values = ", ".join([f"'{e.value}'" for e in ProjectState])
+                raise ValueError(f"Invalid project state. Allowed values are: {allowed_values}")
+        
+        return v
 
 
 class ProjectListResponse(BaseSchema):

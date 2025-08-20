@@ -10,7 +10,7 @@ from app.use_cases.dto.project import (
     ProjectListRequestDTO,
     ProjectListResponseDTO,
 )
-from app.use_cases.errors.project import ProjectNotFoundError
+from app.use_cases.errors import ProjectNotFoundError
 from app.use_cases.mappers.project import ProjectMapper
 
 
