@@ -7,6 +7,7 @@ import time
 from functools import wraps
 from typing import Any, Callable, TypeVar
 
+from app.infrastructures.sqlite_db.database import async_session
 from app.infrastructures.constants.database import QUERY_TIMEOUT
 from app.infrastructures.errors.database import DatabaseQueryError
 
@@ -30,9 +31,8 @@ def with_db_transaction(func: F) -> F:
     """
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        from app.infrastructures.sqlite_db.database import get_db_session
         
-        async with get_db_session() as session:
+        async with async_session() as session:
             try:
                 kwargs["session"] = session
                 result = await func(*args, **kwargs)
