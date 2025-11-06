@@ -1,0 +1,1 @@
+"""Add error handling and logging for the application."""

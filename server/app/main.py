@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from app.config import settings
 
 app = FastAPI(
-    title="Vizor For Data",
+    title="Clean Architecture Template",
     version="1.0.0",
 )
 

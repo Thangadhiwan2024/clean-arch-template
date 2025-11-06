@@ -1,0 +1,1 @@
+"""Add common constants used across the application."""
